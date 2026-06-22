@@ -252,6 +252,7 @@ runs:
         BOM_FILE:   ${{ steps.names.outputs.bom_file }}
         PROJECT:    ${{ inputs.project-name }}
         CLASSIFIER: ${{ inputs.project-classifier }}
+        IMAGE:      ${{ inputs.image }}
       run: |
         set -e
         REPO_NAME="${GITHUB_REPOSITORY##*/}"
@@ -262,16 +263,27 @@ runs:
         echo "  project:    $PROJECT"
         echo "  classifier: $CLASSIFIER"
         echo "  repo:       $REPO_NAME"
+        echo "  image:      ${IMAGE:-<none>}"
 
         echo "=== BEFORE ==="
         jq '{root_name: .metadata.component.name}' "$BOM_FILE"
 
-        jq --arg repo "$REPO_NAME" '
-          if (.metadata.component.name? == ".") then
-            .metadata.component.name = $repo
-          else . end
-        ' "$BOM_FILE" > "$TMP"
-        mv "$TMP" "$BOM_FILE"
+        if [ -n "$IMAGE" ]; then
+          # Preserve the full image reference (including the tag, e.g. :v1.0.0)
+          # as the component name. knoxctl may drop the tag when deriving the
+          # name from the scanned image; force it back to the exact input.
+          jq --arg image "$IMAGE" '
+            .metadata.component.name = $image
+          ' "$BOM_FILE" > "$TMP"
+          mv "$TMP" "$BOM_FILE"
+        else
+          jq --arg repo "$REPO_NAME" '
+            if (.metadata.component.name? == ".") then
+              .metadata.component.name = $repo
+            else . end
+          ' "$BOM_FILE" > "$TMP"
+          mv "$TMP" "$BOM_FILE"
+        fi
 
         jq --arg project "$PROJECT" --arg classifier "$CLASSIFIER" '
           ( if has("$schema") then {"$schema": .["$schema"]} else {} end )
